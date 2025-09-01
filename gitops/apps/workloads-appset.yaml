@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: workloads
+  namespace: argocd
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/TickBoard/TickBoard-deploy.git
+        revision: main
+        directories:
+          - path: gitops/stacks/tickboard/overlays/*
+  template:
+    metadata:
+      name: 'tickboard-{{path.basename}}-appset'
+    spec:
+      project: apps
+      source:
+        repoURL: https://github.com/TickBoard/TickBoard-deploy.git
+        targetRevision: main
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'tickboard'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

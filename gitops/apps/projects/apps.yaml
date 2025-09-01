@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: apps
+  namespace: argocd
+spec:
+  description: Namespaced application workloads managed via GitOps
+  sourceRepos:
+    - https://github.com/ChongZhe001025/EKS-side-project.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+  # Disallow cluster-scoped resources in this project
+  clusterResourceWhitelist: []
+  orphanedResources:
+    warn: true
+

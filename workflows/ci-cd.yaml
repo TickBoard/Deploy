@@ -1,0 +1,126 @@
+name: ci-cd
+
+on:
+  push:
+    branches: [ "main" ]
+    paths-ignore:
+      - "gitops/**"   # 避免因更新 GitOps 清單觸發循環
+      - "docs/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    name: Detect build changes
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.filter.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            build:
+              - 'Dockerfile'
+              - '**/Dockerfile'
+              - 'tickboard/**'
+              - 'src/**'
+              - 'app/**'
+              - 'apps/**'
+              - 'packages/**'
+              - 'cmd/**'
+              - 'backend/**'
+              - 'frontend/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'yarn.lock'
+              - 'go.mod'
+              - 'go.sum'
+
+  build-and-release:
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.build == 'true' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write   # push 回 repo 更新 tag
+      id-token: write   # OIDC to AWS
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GHA_ROLE_ARN }}
+          aws-region: ap-southeast-2
+
+      - name: Set vars
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "IMAGE=${{ secrets.HARBOR_REGISTRY }}/${{ secrets.HARBOR_PROJECT }}/tickboard-gin-api" >> "$GITHUB_OUTPUT"
+          echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.HARBOR_REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.IMAGE }}:${{ steps.vars.outputs.TAG }}
+            ${{ steps.vars.outputs.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # （可選）Trivy 掃描
+      # - uses: aquasecurity/trivy-action@0.28.0
+      #   with:
+      #     image-ref: ${{ steps.vars.outputs.IMAGE }}:${{ steps.vars.outputs.TAG }}
+      #     format: 'table'
+      #     exit-code: '0'
+
+      - name: Update gin-api image in Kustomize overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="gitops/stacks/tickboard/overlays/dev/kustomization.yaml"
+          if [[ -f "$FILE" ]]; then
+            tmp="$FILE.tmp"
+            awk -v image="${{ steps.vars.outputs.IMAGE }}" -v tag="${{ steps.vars.outputs.TAG }}" '
+              {
+                if ($0 ~ /^[[:space:]]*- name: ghcr\.io\/OWNER\/tickboard-gin-api$/) { in=1; print; next }
+                if (in==1 && $0 ~ /^[[:space:]]*newName:/) { sub(/newName:.*/, "    newName: " image); print; next }
+                if (in==1 && $0 ~ /^[[:space:]]*newTag:/) { sub(/newTag:.*/, "    newTag: " tag); in=0; print; next }
+                print
+              }
+            ' "$FILE" > "$tmp" && mv "$tmp" "$FILE"
+
+            if git diff --quiet -- "$FILE"; then
+              echo "No image change to commit."
+            else
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add "$FILE"
+              git commit -m "ci: update gin-api image to ${{ steps.vars.outputs.IMAGE }}:${{ steps.vars.outputs.TAG }}"
+              git push
+            fi
+          else
+            echo "WARN: $FILE not found; skipping overlay image update."
+          fi

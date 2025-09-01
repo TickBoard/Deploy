@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gin-api
+  namespace: tickboard
+  labels:
+    app: gin-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gin-api
+  template:
+    metadata:
+      labels:
+        app: gin-api
+    spec:
+      containers:
+        - name: gin-api
+          image: ghcr.io/OWNER/tickboard-gin-api:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            tcpSocket:
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            tcpSocket:
+              port: 8082
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: PORT
+              value: "8082"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tickboard-secrets
+                  key: JWT_SECRET
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: tickboard-secrets
+                  key: DB_NAME
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: tickboard-secrets
+                  key: MONGO_URI
