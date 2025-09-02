@@ -14,7 +14,7 @@ Repository Structure
       - `overlays/dev/`: Dev overrides (Ingress host patch, sample Secret)
       - `argocd/app-dev.yaml`: Example Argo CD Application targeting the dev overlay
     - `cluster/`: Cluster-scoped bits (e.g., External Secrets `ClusterSecretStore`)
-- `workflows/`: GitHub Actions (CI/CD, manifest validation)
+- `.github/workflows/`: GitHub Actions (CI/CD, manifest validation)
 
 Quick Start
 1) Prerequisites
@@ -25,8 +25,8 @@ Quick Start
 
 2) Prepare images
    - Build and push:
-     - `harbor.czhuang.dev/library/tickboard-gin-api:latest`
-     - `harbor.czhuang.dev/library/tickboard-frontend:latest`
+     - `harbor.czhuang.dev/tickboard/gin-api:latest`
+     - `harbor.czhuang.dev/tickboard/frontend:latest`
 
 3) Prepare secrets (dev)
    - Copy `gitops/stacks/tickboard/overlays/dev/secret.sample.yaml` to `secret.yaml`
@@ -41,8 +41,8 @@ Ingress & Controllers
 
 Images & Overlays
 - Base images use GHCR placeholders; the dev overlay rewrites to Harbor via the `images` section:
-  - `ghcr.io/OWNER/tickboard-gin-api` → `harbor.czhuang.dev/library/tickboard-gin-api:latest`
-  - `ghcr.io/OWNER/tickboard-frontend` → `harbor.czhuang.dev/library/tickboard-frontend:latest`
+  - `ghcr.io/OWNER/tickboard-gin-api` → `harbor.czhuang.dev/tickboard/gin-api:latest`
+  - `ghcr.io/OWNER/tickboard-frontend` → `harbor.czhuang.dev/tickboard/frontend:latest`
 
 Validation & Troubleshooting
 - Validate manifests locally: `kustomize build gitops/stacks/tickboard/overlays/dev`
@@ -53,10 +53,9 @@ Validation & Troubleshooting
   - Mongo DB: Base uses `emptyDir`; for persistence, use a StatefulSet or managed DB
 
 CI/CD
-- `workflows/gitops-validate.yaml`: kubeconform validation for `gitops/**`
-- `workflows/ci-cd.yaml`: Example image build/push to Harbor and auto-bump overlay tag (requires secrets). Optional if this repo does not contain app code.
+- `.github/workflows/gitops-validate.yaml`: Validates built Kustomize overlays (and bases) with kubeconform.
+- `.github/workflows/ci-cd.yaml`: Example image tag bump for overlays (if using external image builds). Optional if this repo does not contain app code.
 
 Notes
 - Deploy from overlays (not base) so image/host overrides apply (e.g., `overlays/dev`).
 - `gitops/apps/workloads-appset.yaml` is an example; adjust it to scan overlay paths if you want ApplicationSet to manage environment overlays.
-

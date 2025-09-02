@@ -1,0 +1,71 @@
+name: manifest-bump
+
+on:
+  # 手動觸發以更新 overlay 中的映像名稱/標籤（此 repo 不再建置映像）
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: "Registry (e.g., harbor.czhuang.dev)"
+        default: "harbor.czhuang.dev"
+        required: true
+      project:
+        description: "Project/namespace (e.g., library)"
+        default: "tickboard"
+        required: true
+      api_tag:
+        description: "gin-api image tag"
+        default: "latest"
+        required: true
+      fe_tag:
+        description: "frontend image tag"
+        default: "latest"
+        required: true
+
+concurrency:
+  group: manifest-bump-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bump-images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update kustomization images (gin-api, frontend)
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="gitops/stacks/tickboard/overlays/dev/kustomization.yaml"
+          API_IMAGE="${{ inputs.registry }}/${{ inputs.project }}/gin-api"
+          FE_IMAGE="${{ inputs.registry }}/${{ inputs.project }}/frontend"
+
+          echo "Updating $FILE to:"
+          echo "  gin-api:    ${API_IMAGE}:${{ inputs.api_tag }}"
+          echo "  frontend:   ${FE_IMAGE}:${{ inputs.fe_tag }}"
+
+          tmp="$FILE.tmp"
+          awk -v apiImg="$API_IMAGE" -v apiTag="${{ inputs.api_tag }}" \
+              -v feImg="$FE_IMAGE" -v feTag="${{ inputs.fe_tag }}" '
+            {
+              if ($0 ~ /^[[:space:]]*- name: ghcr\.io\/OWNER\/tickboard-gin-api$/) { in_api=1; print; next }
+              if ($0 ~ /^[[:space:]]*- name: ghcr\.io\/OWNER\/tickboard-frontend$/) { in_fe=1; print; next }
+              if (in_api==1 && $0 ~ /^[[:space:]]*newName:/) { sub(/newName:.*/, "    newName: " apiImg); print; next }
+              if (in_api==1 && $0 ~ /^[[:space:]]*newTag:/) { sub(/newTag:.*/, "    newTag: " apiTag); in_api=0; print; next }
+              if (in_fe==1 && $0 ~ /^[[:space:]]*newName:/) { sub(/newName:.*/, "    newName: " feImg); print; next }
+              if (in_fe==1 && $0 ~ /^[[:space:]]*newTag:/) { sub(/newTag:.*/, "    newTag: " feTag); in_fe=0; print; next }
+              print
+            }
+          ' "$FILE" > "$tmp" && mv "$tmp" "$FILE"
+
+          if git diff --quiet -- "$FILE"; then
+            echo "No image change to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$FILE"
+            git commit -m "ci: bump images to api=${API_IMAGE}:${{ inputs.api_tag }}, fe=${FE_IMAGE}:${{ inputs.fe_tag }}"
+            git push
+          fi

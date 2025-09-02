@@ -6,7 +6,7 @@ metadata:
 spec:
   description: Cluster-scoped resources and foundational namespaces
   sourceRepos:
-    - https://github.com/ChongZhe001025/EKS-side-project.git
+    - https://github.com/TickBoard/TickBoard-deploy.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*"
@@ -21,4 +21,3 @@ spec:
       kind: CustomResourceDefinition
   orphanedResources:
     warn: true
-

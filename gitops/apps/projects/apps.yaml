@@ -6,7 +6,7 @@ metadata:
 spec:
   description: Namespaced application workloads managed via GitOps
   sourceRepos:
-    - https://github.com/ChongZhe001025/EKS-side-project.git
+    - https://github.com/TickBoard/TickBoard-deploy.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*"
@@ -14,4 +14,3 @@ spec:
   clusterResourceWhitelist: []
   orphanedResources:
     warn: true
-
