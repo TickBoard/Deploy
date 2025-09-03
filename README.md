@@ -33,11 +33,21 @@ Quick Start
    - Edit `JWT_SECRET`, `DB_NAME`, `MONGO_URI`, etc. (Do not commit real secrets.)
 
 4) Deploy via Argo CD
-   - Edit `gitops/stacks/tickboard/argocd/app-dev.yaml` and set `repoURL` to this repo
-   - `kubectl apply -f gitops/stacks/tickboard/argocd/app-dev.yaml`
+   - If this deploy folder lives inside a mono‑repo, update Argo CD `path` to include the `Deploy/` prefix:
+     - `Deploy/gitops/stacks/tickboard/argocd/app-dev.yaml` → `spec.source.path: Deploy/gitops/stacks/tickboard/overlays/dev`
+     - `Deploy/gitops/apps/root-app.yaml` → `spec.source.path: Deploy/gitops/apps`
+     - `Deploy/gitops/apps/workloads-appset.yaml` → generator `directories[].path: Deploy/gitops/stacks/tickboard/overlays/*`
+   - Edit `repoURL` to your Git repo (accessible by Argo CD)
+   - Apply the Application:
+     - `kubectl apply -f Deploy/gitops/stacks/tickboard/argocd/app-dev.yaml`
 
 Ingress & Controllers
 - Base assumes AWS ALB (`ingressClassName: alb` + ALB annotations). If using another controller (e.g., NGINX), patch the Ingress in your overlay accordingly.
+  - EKS tweaks already included:
+    - `alb.ingress.kubernetes.io/target-type: ip` on Ingress
+    - Service health checks:
+      - `gin-api` → `/api/health`
+      - `frontend` → `/`
 
 Images & Overlays
 - Base images use GHCR placeholders; the dev overlay rewrites to Harbor via the `images` section:
@@ -50,6 +60,10 @@ Validation & Troubleshooting
 - Common issues
   - Ingress 404: Verify host in `overlays/dev/ingress-patch.yaml` and DNS
   - Image pull: Ensure Harbor image exists and `imagePullSecrets` are configured if needed
+    - A sample patch is provided: `Deploy/gitops/stacks/tickboard/overlays/dev/image-pull-secret-patch.yaml.sample`
+      - Create the pull secret (example):
+        `kubectl -n tickboard create secret docker-registry harbor-pull-secret --docker-server=harbor.czhuang.dev --docker-username=<user> --docker-password=<pwd> --docker-email=<email>`
+      - Then reference the patch in `kustomization.yaml` under `patches`.
   - Mongo DB: Base uses `emptyDir`; for persistence, use a StatefulSet or managed DB
 
 CI/CD

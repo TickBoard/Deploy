@@ -5,6 +5,8 @@ metadata:
   namespace: tickboard
   labels:
     app: gin-api
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
 spec:
   type: ClusterIP
   selector:
@@ -13,4 +15,3 @@ spec:
     - name: http
       port: 8082
       targetPort: 8082
-

@@ -6,8 +6,9 @@ metadata:
 spec:
   project: cluster
   source:
-    repoURL: https://github.com/TickBoard/TickBoard-deploy.git
+    repoURL: https://github.com/TickBoard/Deploy.git
     targetRevision: main
+    # If this repo hosts deploy under `Deploy/`, include it here
     path: gitops/apps
     directory:
       recurse: true

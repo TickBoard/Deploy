@@ -6,9 +6,10 @@ metadata:
 spec:
   generators:
     - git:
-        repoURL: https://github.com/TickBoard/TickBoard-deploy.git
+        repoURL: https://github.com/TickBoard/Deploy.git
         revision: main
         directories:
+          # If deploy is nested under `Deploy/` in this repo, include the prefix
           - path: gitops/stacks/tickboard/overlays/*
   template:
     metadata:
@@ -16,7 +17,7 @@ spec:
     spec:
       project: apps
       source:
-        repoURL: https://github.com/TickBoard/TickBoard-deploy.git
+        repoURL: https://github.com/TickBoard/Deploy.git
         targetRevision: main
         path: '{{path}}'
       destination:

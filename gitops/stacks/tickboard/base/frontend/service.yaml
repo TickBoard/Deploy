@@ -5,6 +5,8 @@ metadata:
   namespace: tickboard
   labels:
     app: frontend
+  annotations:
+    alb.ingress.kubernetes.io/healthcheck-path: /
 spec:
   type: ClusterIP
   selector:
@@ -13,4 +15,3 @@ spec:
     - name: http
       port: 3000
       targetPort: 3000
-
