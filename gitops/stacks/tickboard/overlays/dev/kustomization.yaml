@@ -8,8 +8,8 @@ patches:
   - path: image-pull-secret-patch.yaml
 images:
   - name: ghcr.io/OWNER/tickboard-gin-api
-    newName: harbor.czhuang.dev/tickboard/gin-api
-    newTag: latest
+        newName: harbor.czhuang.dev/tickboard/gin-api
+        newTag: latest
   - name: ghcr.io/OWNER/tickboard-frontend
-    newName: harbor.czhuang.dev/tickboard/frontend
-    newTag: latest
+        newName: harbor.czhuang.dev/tickboard/frontend
+        newTag: latest
