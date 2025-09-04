@@ -29,7 +29,9 @@ Quick Start
 
 3) Prepare secrets (dev)
    - Copy `gitops/stacks/tickboard/overlays/dev/secret.sample.yaml` to `secret.yaml`
-   - Edit `JWT_SECRET`, `DB_NAME`, `MONGO_URI`, `MONGO_ROOT_*` (Do not commit real secrets.)
+   - Edit `JWT_SECRET`, `DB_NAME`, `MONGO_URI`, `MONGO_ROOT_*`
+   - Do NOT commit this file; it is gitignored: `gitops/stacks/tickboard/overlays/dev/secret.yaml`
+   - Apply it to your cluster: `kubectl apply -f gitops/stacks/tickboard/overlays/dev/secret.yaml`
 
 4) Deploy via Argo CD (example)
    - If deploy lives inside a mono‑repo, update Argo CD `path` values accordingly.

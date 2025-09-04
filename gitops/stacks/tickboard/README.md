@@ -15,7 +15,9 @@ Quick Start
 2) Prepare secrets
    - Copy overlays/dev/secret.sample.yaml to overlays/dev/secret.yaml
    - Edit values (JWT_SECRET, DB_NAME, MONGO_URI, MONGO_ROOT_*)
-   - Consider Sealed Secrets or SOPS for real environments
+   - Do NOT commit `overlays/dev/secret.yaml` (gitignored). Apply locally:
+     - `kubectl apply -f overlays/dev/secret.yaml`
+   - For production, consider Sealed Secrets or SOPS
 
 3) Install Argo CD on cluster (once)
    - kubectl create namespace argocd

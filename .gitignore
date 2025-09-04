@@ -1,0 +1,3 @@
+# Ignore local dev secrets (never commit real secrets)
+gitops/stacks/tickboard/overlays/dev/secret.yaml
+
