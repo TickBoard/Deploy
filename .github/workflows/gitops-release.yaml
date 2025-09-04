@@ -84,7 +84,7 @@ jobs:
 
       - name: Create Pull Request
         if: steps.bump.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v7
         with:
           commit-message: |
             ci: bump dev overlay images to api=${{ steps.vars.outputs.api_tag }}, fe=${{ steps.vars.outputs.fe_tag }}
