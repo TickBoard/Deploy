@@ -9,12 +9,12 @@ Structure
 
 Quick Start
 1) Build & push images
-   - harbor.czhuang.dev/library/tickboard-gin-api:latest
-   - harbor.czhuang.dev/library/tickboard-frontend:latest
+   - harbor.czhuang.dev/tickboard/gin-api:latest
+   - harbor.czhuang.dev/tickboard/frontend:latest
 
 2) Prepare secrets
    - Copy overlays/dev/secret.sample.yaml to overlays/dev/secret.yaml
-   - Edit values (JWT_SECRET, DB_NAME, MONGO_URI, etc.)
+   - Edit values (JWT_SECRET, DB_NAME, MONGO_URI, MONGO_ROOT_*)
    - Consider Sealed Secrets or SOPS for real environments
 
 3) Install Argo CD on cluster (once)
@@ -48,9 +48,12 @@ Local Validate & Render
 Images & Overlays
 - Base images use GHCR placeholders to keep base generic.
 - The dev overlay rewrites images to Harbor using kustomize `images`:
-  - ghcr.io/OWNER/tickboard-gin-api → harbor.czhuang.dev/library/tickboard-gin-api:latest
-  - ghcr.io/OWNER/tickboard-frontend → harbor.czhuang.dev/library/tickboard-frontend:latest
-- CI can update the overlay tag (see consolidated `workflows/deploy.yaml`, manual dispatch inputs).
+  - ghcr.io/OWNER/tickboard-gin-api → harbor.czhuang.dev/tickboard/gin-api:latest
+  - ghcr.io/OWNER/tickboard-frontend → harbor.czhuang.dev/tickboard/frontend:latest
+  
+Secrets & Registry Auth
+- Preferred: Overlay includes `serviceaccount-patch.yaml` adding `imagePullSecrets` to the default SA.
+- Optional: If you prefer per-Deployment patching, rename `image-pull-secret-patch.yaml.sample` and include it in `kustomization.yaml` under `patches`.
 
 Secrets & Registry Auth
 - Application secrets: place real values in `overlays/dev/secret.yaml` (do not commit). For production, prefer Sealed Secrets or SOPS.
@@ -78,8 +81,8 @@ Argo CD Models
   - If you want ApplicationSet to deploy overlays, change generator directories to `gitops/stacks/*/overlays/*` and adjust app naming and destination namespace accordingly.
 
 CI/CD Overview
-- `workflows/deploy.yaml`: Consolidated deploy. On manual trigger, bumps overlay image tags; on push to `gitops/**`, deploys to EKS via Argo CD.
-  - Requires GitHub secrets: `HARBOR_REGISTRY`, `HARBOR_PROJECT`, `HARBOR_USERNAME`, `HARBOR_PASSWORD`, and `AWS_GHA_ROLE_ARN` if using AWS OIDC.
+- `workflows/gitops-ci.yaml`: Validates manifests (kubeconform) on PR/push; deploys on push to main after validation.
+  - Requires GitHub secrets/vars: `AWS_GHA_ROLE_ARN`, `AWS_REGION`, `EKS_CLUSTER_NAME` and Harbor creds if needed.
 
 Troubleshooting
 - Ingress 404/host mismatch:

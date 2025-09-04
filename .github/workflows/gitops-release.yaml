@@ -1,0 +1,105 @@
+name: gitops-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_tag:
+        description: "gin-api image tag"
+        default: "latest"
+        required: true
+      fe_tag:
+        description: "frontend image tag"
+        default: "latest"
+        required: true
+      tag:
+        description: "Optional: set both api/fe to this tag"
+        default: ""
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: gitops-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bump-and-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive tags and branch name
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_ALL="${{ inputs.tag }}"
+          API_TAG_IN="${{ inputs.api_tag }}"
+          FE_TAG_IN="${{ inputs.fe_tag }}"
+          if [[ -n "$TAG_ALL" ]]; then
+            API_TAG="$TAG_ALL"
+            FE_TAG="$TAG_ALL"
+          else
+            API_TAG="$API_TAG_IN"
+            FE_TAG="$FE_TAG_IN"
+          fi
+          echo "api_tag=$API_TAG" >> "$GITHUB_OUTPUT"
+          echo "fe_tag=$FE_TAG" >> "$GITHUB_OUTPUT"
+          ts="$(date +%Y%m%d-%H%M%S)"
+          sanitize() { echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g'; }
+          api_san=$(sanitize "$API_TAG")
+          fe_san=$(sanitize "$FE_TAG")
+          BRANCH="release/bump-images-${ts}-api-${api_san}-fe-${fe_san}"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Bump kustomize image tags in dev overlay
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="gitops/stacks/tickboard/overlays/dev/kustomization.yaml"
+          API_TAG="${{ steps.vars.outputs.api_tag }}"
+          FE_TAG="${{ steps.vars.outputs.fe_tag }}"
+          echo "Updating $FILE tags to: api=$API_TAG, fe=$FE_TAG"
+          tmp="$FILE.tmp"
+          awk -v apiTag="$API_TAG" -v feTag="$FE_TAG" '
+            {
+              if ($0 ~ /^[[:space:]]*- name: ghcr\.io\/OWNER\/tickboard-gin-api$/) { in_api=1; print; next }
+              if ($0 ~ /^[[:space:]]*- name: ghcr\.io\/OWNER\/tickboard-frontend$/) { in_fe=1; print; next }
+              if (in_api==1 && $0 ~ /^[[:space:]]*newTag:/) { sub(/newTag:.*/, "    newTag: " apiTag); in_api=0; print; next }
+              if (in_fe==1 && $0 ~ /^[[:space:]]*newTag:/) { sub(/newTag:.*/, "    newTag: " feTag); in_fe=0; print; next }
+              print
+            }
+          ' "$FILE" > "$tmp" && mv "$tmp" "$FILE"
+
+          if git diff --quiet -- "$FILE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No image tag changes detected."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Pull Request
+        if: steps.bump.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: |
+            ci: bump dev overlay images to api=${{ steps.vars.outputs.api_tag }}, fe=${{ steps.vars.outputs.fe_tag }}
+          title: |
+            ci: bump dev images to api=${{ steps.vars.outputs.api_tag }}, fe=${{ steps.vars.outputs.fe_tag }}
+          body: |
+            This PR updates kustomize image tags in dev overlay.
+
+            - gin-api tag: `${{ steps.vars.outputs.api_tag }}`
+            - frontend tag: `${{ steps.vars.outputs.fe_tag }}`
+
+            Run by `${{ github.actor }}` via workflow_dispatch.
+          branch: ${{ steps.vars.outputs.branch }}
+          delete-branch: true
+          labels: ci, release, gitops
+          add-paths: |
+            gitops/stacks/tickboard/overlays/dev/kustomization.yaml
+

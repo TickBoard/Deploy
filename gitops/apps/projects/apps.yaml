@@ -6,7 +6,7 @@ metadata:
 spec:
   description: Namespaced application workloads managed via GitOps
   sourceRepos:
-    - https://github.com/TickBoard/TickBoard-deploy.git
+    - https://github.com/TickBoard/Deploy.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*"

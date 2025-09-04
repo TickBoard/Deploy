@@ -6,7 +6,7 @@ metadata:
 spec:
   description: Cluster-scoped resources and foundational namespaces
   sourceRepos:
-    - https://github.com/TickBoard/TickBoard-deploy.git
+    - https://github.com/TickBoard/Deploy.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*"

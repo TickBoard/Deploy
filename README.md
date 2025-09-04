@@ -3,7 +3,7 @@ TickBoard Deploy (GitOps)
 Overview
 - Declarative GitOps manifests for TickBoard using Kustomize and Argo CD.
 - Base provides generic Kubernetes objects; overlays adjust per environment (e.g., dev).
-- Single consolidated deploy workflow: pulls Harbor images and deploys to EKS via Argo CD; manual dispatch supports image tag bump.
+- Single CI workflow validates and deploys to EKS via Argo CD on push to `main`.
 
 Repository Structure
 - `gitops/`
@@ -11,10 +11,9 @@ Repository Structure
   - `stacks/`
     - `tickboard/`
       - `base/`: Namespace, Mongo (ephemeral), `gin-api`, `frontend`, Ingress
-      - `overlays/dev/`: Dev overrides (Ingress host patch, sample Secret)
+      - `overlays/dev/`: Dev overrides (ServiceAccount imagePullSecret, sample Secret)
       - `argocd/app-dev.yaml`: Example Argo CD Application targeting the dev overlay
-    - `cluster/`: Cluster-scoped bits (e.g., External Secrets `ClusterSecretStore`)
-- `.github/workflows/`: GitHub Actions (CI/CD, manifest validation)
+- `.github/workflows/`: GitHub Actions (CI/CD)
 
 Quick Start
 1) Prerequisites
@@ -30,45 +29,38 @@ Quick Start
 
 3) Prepare secrets (dev)
    - Copy `gitops/stacks/tickboard/overlays/dev/secret.sample.yaml` to `secret.yaml`
-   - Edit `JWT_SECRET`, `DB_NAME`, `MONGO_URI`, etc. (Do not commit real secrets.)
+   - Edit `JWT_SECRET`, `DB_NAME`, `MONGO_URI`, `MONGO_ROOT_*` (Do not commit real secrets.)
 
-4) Deploy via Argo CD
-   - If this deploy folder lives inside a mono‑repo, update Argo CD `path` to include the `Deploy/` prefix:
-     - `Deploy/gitops/stacks/tickboard/argocd/app-dev.yaml` → `spec.source.path: Deploy/gitops/stacks/tickboard/overlays/dev`
-     - `Deploy/gitops/apps/root-app.yaml` → `spec.source.path: Deploy/gitops/apps`
-     - `Deploy/gitops/apps/workloads-appset.yaml` → generator `directories[].path: Deploy/gitops/stacks/tickboard/overlays/*`
+4) Deploy via Argo CD (example)
+   - If deploy lives inside a mono‑repo, update Argo CD `path` values accordingly.
    - Edit `repoURL` to your Git repo (accessible by Argo CD)
-   - Apply the Application:
-     - `kubectl apply -f Deploy/gitops/stacks/tickboard/argocd/app-dev.yaml`
+   - Apply Application: `kubectl apply -f gitops/stacks/tickboard/argocd/app-dev.yaml`
 
 Ingress & Controllers
-- Base assumes AWS ALB (`ingressClassName: alb` + ALB annotations). If using another controller (e.g., NGINX), patch the Ingress in your overlay accordingly.
-  - EKS tweaks already included:
-    - `alb.ingress.kubernetes.io/target-type: ip` on Ingress
-    - Service health checks:
-      - `gin-api` → `/api/health`
-      - `frontend` → `/`
+- Assumes AWS ALB (`ingressClassName: alb` + ALB annotations) on the Ingress.
+  - Target group health checks are set per Service via annotations:
+    - `gin-api` → `/api/health`
+    - `frontend` → `/`
+  - Ensure AWS Load Balancer Controller is installed and DNS points to the ALB.
 
 Images & Overlays
-- Base images use GHCR placeholders; the dev overlay rewrites to Harbor via the `images` section:
+- Base images use GHCR placeholders; the dev overlay rewrites to Harbor via `images`:
   - `ghcr.io/OWNER/tickboard-gin-api` → `harbor.czhuang.dev/tickboard/gin-api:latest`
   - `ghcr.io/OWNER/tickboard-frontend` → `harbor.czhuang.dev/tickboard/frontend:latest`
 
 Validation & Troubleshooting
 - Validate manifests locally: `kustomize build gitops/stacks/tickboard/overlays/dev`
-- CI manifest validation (optional): validate locally or add a dedicated workflow if desired
 - Common issues
-  - Ingress 404: Verify host in `overlays/dev/ingress-patch.yaml` and DNS
-  - Image pull: Ensure Harbor image exists and `imagePullSecrets` are configured if needed
-    - A sample patch is provided: `Deploy/gitops/stacks/tickboard/overlays/dev/image-pull-secret-patch.yaml.sample`
-      - Create the pull secret (example):
-        `kubectl -n tickboard create secret docker-registry harbor-pull-secret --docker-server=harbor.czhuang.dev --docker-username=<user> --docker-password=<pwd> --docker-email=<email>`
-      - Then reference the patch in `kustomization.yaml` under `patches`.
+  - Ingress 404: Verify host and DNS
+  - Image pull: Ensure Harbor image exists and `imagePullSecrets` are configured
+    - Preferred: `serviceaccount-patch.yaml` adds `harbor-pull-secret` to the default SA
+    - Create the pull secret:
+      `kubectl -n tickboard create secret docker-registry harbor-pull-secret --docker-server=harbor.czhuang.dev --docker-username=<user> --docker-password=<pwd> --docker-email=<email>`
   - Mongo DB: Base uses `emptyDir`; for persistence, use a StatefulSet or managed DB
 
 CI/CD
-- `.github/workflows/deploy.yaml`: Consolidated workflow that optionally bumps overlay image tags (Harbor) on manual trigger and deploys to Infra EKS via Argo CD on `push` to `gitops/**`.
+- `.github/workflows/gitops-ci.yaml`: Validates Kustomize with kubeconform on PR/push; on push to `main` (and validation success) deploys via Argo CD to EKS.
 
 Notes
 - Deploy from overlays (not base) so image/host overrides apply (e.g., `overlays/dev`).
-- `gitops/apps/workloads-appset.yaml` is an example; adjust it to scan overlay paths if you want ApplicationSet to manage environment overlays.
+- `gitops/apps/workloads-appset.yaml` is an example scanning overlays; adjust as needed.
