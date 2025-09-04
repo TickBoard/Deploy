@@ -50,17 +50,17 @@ Images & Overlays
 - The dev overlay rewrites images to Harbor using kustomize `images`:
   - ghcr.io/OWNER/tickboard-gin-api → harbor.czhuang.dev/library/tickboard-gin-api:latest
   - ghcr.io/OWNER/tickboard-frontend → harbor.czhuang.dev/library/tickboard-frontend:latest
-- CI can update the overlay tag (see `workflows/ci-cd.yaml`).
+- CI can update the overlay tag (see consolidated `workflows/deploy.yaml`, manual dispatch inputs).
 
 Secrets & Registry Auth
 - Application secrets: place real values in `overlays/dev/secret.yaml` (do not commit). For production, prefer Sealed Secrets or SOPS.
 - Harbor auth (if your cluster needs it to pull images):
   - Create a docker-registry Secret in the `tickboard` namespace:
-    - kubectl -n tickboard create secret docker-registry harbor-creds \
+    - kubectl -n tickboard create secret docker-registry harbor-pull-secret \
       --docker-server=harbor.czhuang.dev \
       --docker-username=$HARBOR_USERNAME \
       --docker-password=$HARBOR_PASSWORD
-  - Reference it via `imagePullSecrets` in an overlay patch (Deployment or default ServiceAccount).
+  - Reference it via `imagePullSecrets` in an overlay patch (Deployment or default ServiceAccount) — matches `overlays/dev/*-patch.yaml`.
 
 Ingress Controller
 - Base assumes AWS ALB (`ingressClassName: alb` + annotations).
@@ -78,8 +78,7 @@ Argo CD Models
   - If you want ApplicationSet to deploy overlays, change generator directories to `gitops/stacks/*/overlays/*` and adjust app naming and destination namespace accordingly.
 
 CI/CD Overview
-- `workflows/gitops-validate.yaml`: Validates all `gitops/**` manifests with kubeconform.
-- `workflows/ci-cd.yaml`: Optional image build/push to Harbor and auto-bump `overlays/dev` image tag.
+- `workflows/deploy.yaml`: Consolidated deploy. On manual trigger, bumps overlay image tags; on push to `gitops/**`, deploys to EKS via Argo CD.
   - Requires GitHub secrets: `HARBOR_REGISTRY`, `HARBOR_PROJECT`, `HARBOR_USERNAME`, `HARBOR_PASSWORD`, and `AWS_GHA_ROLE_ARN` if using AWS OIDC.
 
 Troubleshooting
@@ -91,4 +90,3 @@ Troubleshooting
   - Check project permissions and repoURL correctness; ensure `syncOptions: CreateNamespace=true` for new namespaces.
 - Mongo connection issues:
   - Verify `MONGO_URI` host matches the in-cluster Service (mongo.tickboard.svc.cluster.local) or your external endpoint.
-

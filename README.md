@@ -3,7 +3,7 @@ TickBoard Deploy (GitOps)
 Overview
 - Declarative GitOps manifests for TickBoard using Kustomize and Argo CD.
 - Base provides generic Kubernetes objects; overlays adjust per environment (e.g., dev).
-- CI includes a manifest validator; optional image build workflow is included as a template.
+- Single consolidated deploy workflow: pulls Harbor images and deploys to EKS via Argo CD; manual dispatch supports image tag bump.
 
 Repository Structure
 - `gitops/`
@@ -56,7 +56,7 @@ Images & Overlays
 
 Validation & Troubleshooting
 - Validate manifests locally: `kustomize build gitops/stacks/tickboard/overlays/dev`
-- CI manifest validation: see `workflows/gitops-validate.yaml`
+- CI manifest validation (optional): validate locally or add a dedicated workflow if desired
 - Common issues
   - Ingress 404: Verify host in `overlays/dev/ingress-patch.yaml` and DNS
   - Image pull: Ensure Harbor image exists and `imagePullSecrets` are configured if needed
@@ -67,8 +67,7 @@ Validation & Troubleshooting
   - Mongo DB: Base uses `emptyDir`; for persistence, use a StatefulSet or managed DB
 
 CI/CD
-- `.github/workflows/gitops-validate.yaml`: Validates built Kustomize overlays (and bases) with kubeconform.
-- `.github/workflows/ci-cd.yaml`: Example image tag bump for overlays (if using external image builds). Optional if this repo does not contain app code.
+- `.github/workflows/deploy.yaml`: Consolidated workflow that optionally bumps overlay image tags (Harbor) on manual trigger and deploys to Infra EKS via Argo CD on `push` to `gitops/**`.
 
 Notes
 - Deploy from overlays (not base) so image/host overrides apply (e.g., `overlays/dev`).

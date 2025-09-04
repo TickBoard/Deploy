@@ -1,0 +1,151 @@
+name: deploy-harbor-to-eks
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "gitops/**"
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: "Registry (e.g., harbor.czhuang.dev)"
+        default: "harbor.czhuang.dev"
+        required: true
+      project:
+        description: "Project/namespace (e.g., tickboard)"
+        default: "tickboard"
+        required: true
+      api_tag:
+        description: "gin-api image tag"
+        default: "latest"
+        required: true
+      fe_tag:
+        description: "frontend image tag"
+        default: "latest"
+        required: true
+
+concurrency:
+  group: deploy-harbor-to-eks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GHA_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Set kubectl context for EKS
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AWS_REGION:-}" ] || [ -z "${EKS_CLUSTER_NAME:-}" ]; then
+            echo "AWS_REGION and/or EKS_CLUSTER_NAME repo variables are not set" >&2
+            exit 1
+          fi
+          aws sts get-caller-identity
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+          kubectl version --client
+
+      - name: Ensure tickboard namespace exists
+        run: |
+          set -euo pipefail
+          kubectl get ns tickboard >/dev/null 2>&1 || kubectl create namespace tickboard
+
+      - name: Ensure Harbor image pull secret (optional)
+        env:
+          HARBOR_REGISTRY: ${{ secrets.HARBOR_REGISTRY }}
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+          HARBOR_EMAIL: ${{ secrets.HARBOR_EMAIL }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${HARBOR_USERNAME:-}" || -z "${HARBOR_PASSWORD:-}" ]]; then
+            echo "Harbor credentials not provided; skipping imagePullSecret creation."
+            exit 0
+          fi
+          server="${HARBOR_REGISTRY:-harbor.czhuang.dev}"
+          email="${HARBOR_EMAIL:-ci@example.com}"
+          kubectl -n tickboard create secret docker-registry harbor-pull-secret \
+            --docker-server="$server" \
+            --docker-username="$HARBOR_USERNAME" \
+            --docker-password="$HARBOR_PASSWORD" \
+            --docker-email="$email" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Bump kustomize images (manual trigger)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="gitops/stacks/tickboard/overlays/dev/kustomization.yaml"
+          API_IMAGE="${{ inputs.registry }}/${{ inputs.project }}/gin-api"
+          FE_IMAGE="${{ inputs.registry }}/${{ inputs.project }}/frontend"
+
+          echo "Updating $FILE to:"
+          echo "  gin-api:   ${API_IMAGE}:${{ inputs.api_tag }}"
+          echo "  frontend:  ${FE_IMAGE}:${{ inputs.fe_tag }}"
+
+          tmp="$FILE.tmp"
+          awk -v apiImg="$API_IMAGE" -v apiTag="${{ inputs.api_tag }}" \
+              -v feImg="$FE_IMAGE" -v feTag="${{ inputs.fe_tag }}" '
+            {
+              if ($0 ~ /^[[:space:]]*- name: ghcr\.io\/OWNER\/tickboard-gin-api$/) { in_api=1; print; next }
+              if ($0 ~ /^[[:space:]]*- name: ghcr\.io\/OWNER\/tickboard-frontend$/) { in_fe=1; print; next }
+              if (in_api==1 && $0 ~ /^[[:space:]]*newName:/) { sub(/newName:.*/, "    newName: " apiImg); print; next }
+              if (in_api==1 && $0 ~ /^[[:space:]]*newTag:/) { sub(/newTag:.*/, "    newTag: " apiTag); in_api=0; print; next }
+              if (in_fe==1 && $0 ~ /^[[:space:]]*newName:/) { sub(/newName:.*/, "    newName: " feImg); print; next }
+              if (in_fe==1 && $0 ~ /^[[:space:]]*newTag:/) { sub(/newTag:.*/, "    newTag: " feTag); in_fe=0; print; next }
+              print
+            }
+          ' "$FILE" > "$tmp" && mv "$tmp" "$FILE"
+
+          if git diff --quiet -- "$FILE"; then
+            echo "No image change to commit."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add "$FILE"
+            git commit -m "ci: bump images to api=${API_IMAGE}:${{ inputs.api_tag }}, fe=${FE_IMAGE}:${{ inputs.fe_tag }}"
+            git push
+          fi
+
+      - name: Apply AppProjects (bootstrap)
+        run: |
+          set -euo pipefail
+          kubectl apply -f gitops/apps/projects/cluster.yaml
+          kubectl apply -f gitops/apps/projects/apps.yaml
+
+      - name: Apply root Application and ApplicationSet
+        run: |
+          set -euo pipefail
+          kubectl apply -f gitops/apps/root-app.yaml
+          kubectl apply -f gitops/apps/workloads-appset.yaml
+
+      - name: Force Argo refresh of root-app (best-effort)
+        run: |
+          set -euo pipefail
+          kubectl -n argocd patch application root-app \
+            -p '{"metadata":{"annotations":{"argocd.argoproj.io/refresh":"hard"}}}' --type merge || true
+
+      - name: Wait for root-app Healthy (best-effort)
+        run: |
+          set -euo pipefail
+          kubectl -n argocd wait --for=jsonpath='{.status.health.status}'=Healthy application/root-app --timeout=10m || true
+
