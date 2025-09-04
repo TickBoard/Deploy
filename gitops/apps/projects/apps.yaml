@@ -10,7 +10,9 @@ spec:
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*"
-  # Disallow cluster-scoped resources in this project
-  clusterResourceWhitelist: []
+  # Allow Namespace to be managed by apps (needed because base includes namespace.yaml)
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
   orphanedResources:
     warn: true
